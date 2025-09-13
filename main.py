@@ -11,9 +11,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi import Query, Path
 from typing import Optional
 
+from models.cat import CatRead,CatCreate,CatUpdate
+from models.laptopStatus import LaptopStatus
 from models.person import PersonCreate, PersonRead, PersonUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -22,6 +25,7 @@ port = int(os.environ.get("FASTAPIPORT", 8000))
 # -----------------------------------------------------------------------------
 persons: Dict[UUID, PersonRead] = {}
 addresses: Dict[UUID, AddressRead] = {}
+cats: Dict[UUID, CatRead] = {}
 
 app = FastAPI(
     title="Person/Address API",
@@ -42,6 +46,15 @@ def make_health(echo: Optional[str], path_echo: Optional[str]=None) -> Health:
         echo=echo,
         path_echo=path_echo
     )
+def make_laptopStatus(echo: Optional[str], path_echo: Optional[str]=None) -> LaptopStatus:
+    return LaptopStatus(
+        name="Test Laptop",
+        status_message="Running",
+        timestamp=datetime.utcnow().isoformat() + "Z",
+        ip_address=socket.gethostbyname(socket.gethostname()),
+        echo=echo,
+        path_echo=path_echo
+    )
 
 @app.get("/health", response_model=Health)
 def get_health_no_path(echo: str | None = Query(None, description="Optional echo string")):
@@ -54,6 +67,19 @@ def get_health_with_path(
     echo: str | None = Query(None, description="Optional echo string"),
 ):
     return make_health(echo=echo, path_echo=path_echo)
+
+#LAPTOP
+@app.get("/laptopStatus", response_model=LaptopStatus)
+def get_laptopStatus_no_path(echo: str | None = Query(None, description="Optional echo string")):
+    # Works because path_echo is optional in the model
+    return make_laptopStatus(echo=echo, path_echo=None)
+
+@app.get("/laptopStatus/{path_echo}", response_model=LaptopStatus)
+def get_laptopStatus_with_path(
+    path_echo: str = Path(..., description="Required echo in the URL path"),
+    echo: str | None = Query(None, description="Optional echo string"),
+):
+    return make_laptopStatus(echo=echo, path_echo=path_echo)
 
 @app.post("/addresses", response_model=AddressRead, status_code=201)
 def create_address(address: AddressCreate):
@@ -158,7 +184,52 @@ def update_person(person_id: UUID, update: PersonUpdate):
     stored.update(update.model_dump(exclude_unset=True))
     persons[person_id] = PersonRead(**stored)
     return persons[person_id]
+# -----------------------------------------------------------------------------
+# Cat endpoints
+# -----------------------------------------------------------------------------
+@app.post("/cats", response_model=CatRead, status_code=201)
+def create_cat(cat: CatCreate):
+    # Each person gets its own UUID; stored as PersonRead
+    cat_read = CatRead(**cat.model_dump())
+    cats[cat_read.id] = cat_read
+    return cat_read
 
+@app.get("/cats", response_model=List[CatRead])
+def list_cat(
+    name: Optional[str] = Query(None, description="Filter by first name"),
+    birth_date: Optional[str] = Query(None, description="Filter by date of birth (YYYY-MM-DD)"),
+    city: Optional[str] = Query(None, description="Filter by city of at least one address"),
+    country: Optional[str] = Query(None, description="Filter by country of at least one address"),
+):
+    results = list(cats.values())
+
+    if name is not None:
+        results = [p for p in results if p.name == name]
+    if birth_date is not None:
+        results = [p for p in results if str(p.birth_date) == birth_date]
+
+    # nested address filtering
+    if city is not None:
+        results = [p for p in results if any(addr.city == city for addr in p.addresses)]
+    if country is not None:
+        results = [p for p in results if any(addr.country == country for addr in p.addresses)]
+
+    return results
+
+@app.get("/cats/{cats_id}", response_model=PersonRead)
+def get_cat(cats_id: UUID):
+    if cats_id not in cats:
+        raise HTTPException(status_code=404, detail="Cat not found")
+    return cats[cats_id]
+
+@app.patch("/cats/{cats_id}", response_model=PersonRead)
+def update_cat(cats_id: UUID, update: CatUpdate):
+    if cats_id not in cats:
+        raise HTTPException(status_code=404, detail="Cat not found")
+    stored = cats[cats_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    cats[cats_id] = PersonRead(**stored)
+    return cats[cats_id]
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
@@ -172,4 +243,4 @@ def root():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="localhost", port=port, reload=True)
