@@ -216,20 +216,36 @@ def list_cat(
 
     return results
 
-@app.get("/cats/{cats_id}", response_model=PersonRead)
+@app.get("/cats/{cats_id}", response_model=CatRead)
 def get_cat(cats_id: UUID):
     if cats_id not in cats:
         raise HTTPException(status_code=404, detail="Cat not found")
     return cats[cats_id]
 
-@app.patch("/cats/{cats_id}", response_model=PersonRead)
+@app.patch("/cats/{cats_id}", response_model=CatRead)
 def update_cat(cats_id: UUID, update: CatUpdate):
     if cats_id not in cats:
         raise HTTPException(status_code=404, detail="Cat not found")
     stored = cats[cats_id].model_dump()
     stored.update(update.model_dump(exclude_unset=True))
-    cats[cats_id] = PersonRead(**stored)
+    cats[cats_id] = CatRead(**stored)
     return cats[cats_id]
+@app.delete("/cats/{cats_id}", response_model=CatRead)
+def delete_cat(cats_id:UUID):
+    if cats_id not in cats:
+        raise HTTPException(status_code=404, detail="Cat not found")
+    deleted=cats.pop(cats_id)
+    return deleted
+@app.put("/cats/{cats_id}", response_model=CatRead)
+def put_cat(cats_id: UUID, update:CatCreate):
+    if cats_id not in cats:
+        raise HTTPException(status_code=404, detail="Cat not found")
+    newcat=update.model_dump()
+    newcat['id']=cats_id
+    cats[cats_id]=CatRead(**newcat)
+    return cats[cats_id]
+
+
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
